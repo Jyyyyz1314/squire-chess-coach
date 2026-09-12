@@ -1,0 +1,22 @@
+# 更新记录
+
+本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 的结构；正式发布前版本号可能快速变化。
+
+## [Unreleased]
+
+### 新增
+
+- 自动 Stockfish 多变例分析、AI 老师提问、PGN/学习档案导入导出。
+- AI 路由按客户端分钟/日限流、请求合并与短期缓存。
+- 评分、限流和 Lichess 注释 PGN 的自动化测试。
+- GitHub Actions、Dependabot、安全策略和贡献指南。
+
+### 修复
+
+- 保留将杀分数的正负方向，正确显示黑方优势与接近均势。
+- 清理模型错误响应，避免向浏览器暴露上游返回正文。
+- 支持粘贴时被 Markdown 包裹的 Lichess `Site` 链接。
+
+### 安全
+
+- 升级 Next.js 并将生产依赖审计降为 0 个已知漏洞。

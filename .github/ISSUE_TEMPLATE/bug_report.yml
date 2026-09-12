@@ -1,0 +1,31 @@
+name: 缺陷报告
+description: 报告可复现的棋盘、引擎、PGN 或 AI 老师问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？你预期发生什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 请附最小 PGN/FEN；提交前移除 API 密钥和个人信息。
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      placeholder: Windows 11 / Chrome 版本 / Node 版本
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已确认内容中不含 API 密钥或其他敏感信息
+          required: true
