@@ -1,13 +1,12 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- chess-piece SVGs are small local assets rendered on 64 fixed squares */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Chess, Square } from "chess.js";
 import { BookOpenCheck, Bot, ChevronRight, ExternalLink, Lightbulb, ListTree, RotateCcw, Target, Trophy } from "lucide-react";
 import { OPENING_SAMPLES } from "@/lib/chess/opening-samples";
 import { OPENING_THEORY_BY_SAMPLE } from "@/lib/chess/opening-variations";
-import { applyUciMove, fixedMoveExplanation, isExpectedOpeningMove, openingTrainingLineFromPgn } from "@/lib/chess/opening-trainer";
-import { StockfishAdapter } from "@/lib/engine/stockfish";
+import { attemptOpeningMove, fixedMoveExplanation, openingTrainingLineFromPgn } from "@/lib/chess/opening-trainer";
 
 type StudentColor = "w" | "b";
 type TrainingMode = "learn" | "test";
@@ -37,7 +36,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   const [attempts, setAttempts] = useState(0);
   const [score, setScore] = useState(0);
   const [feedback, setFeedback] = useState("请选择棋子，走出你认为正确的开局着法。");
-  const abortRef = useRef<AbortController | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<"neutral" | "correct" | "error">("neutral");
   const sample = OPENING_SAMPLES.find((item) => item.id === sampleId) ?? OPENING_SAMPLES[0];
   const theory = OPENING_THEORY_BY_SAMPLE[sample.id];
   const variation = theory.variations.find((item) => item.id === variationId) ?? theory.variations[0];
@@ -51,7 +50,6 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   const progress = Math.min(100, Math.round(plyFromFen(fen) / Math.max(line.length, 1) * 100));
 
   function resetLesson() {
-    abortRef.current?.abort();
     const fresh = new Chess();
     let nextPly = 0;
     if (studentColor === "b" && line[0]) {
@@ -66,6 +64,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     setDone(false);
     setAttempts(0);
     setScore(0);
+    setFeedbackTone("neutral");
     setFeedback(mode === "learn" ? "跟随主线理解每一步的目的；需要时可以查看提示。" : "测试已开始：提示默认隐藏，走出你认为正确的着法。");
   }
 
@@ -73,7 +72,6 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     // A configuration change intentionally starts a fresh training session.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     resetLesson();
-    return () => abortRef.current?.abort();
     // Resetting is intentionally tied to lesson configuration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sampleId, variationId, studentColor, mode]);
@@ -91,12 +89,12 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     setFeedback(message);
   }
 
-  async function respondFromPosition(nextGame: Chess, nextBookPly: number, wasCorrect: boolean, playedSan: string) {
+  function respondFromPosition(nextGame: Chess, nextBookPly: number, playedSan: string) {
     if (nextGame.isGameOver() || plyFromFen(nextGame.fen()) >= 20) {
-      finish(nextGame, `训练结束。你完成了 ${attempts + 1} 次选择，其中 ${score + (wasCorrect ? 1 : 0)} 次命中主线。`);
+      finish(nextGame, `训练结束。你完成了 ${attempts + 1} 次选择，其中 ${score + 1} 次命中主线。`);
       return;
     }
-    if (wasCorrect && line[nextBookPly] && line[nextBookPly].color !== studentColor) {
+    if (line[nextBookPly] && line[nextBookPly].color !== studentColor) {
       const reply = line[nextBookPly];
       nextGame.move(reply);
       const afterReply = nextBookPly + 1;
@@ -107,37 +105,13 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
       }
       setFen(nextGame.fen());
       setBusy(false);
+      setFeedbackTone("correct");
       setFeedback(`正确：${playedSan}。电脑按主线回应。${fixedMoveExplanation(reply, variation.focus)}`);
       return;
     }
-    if (wasCorrect && nextBookPly >= line.length) {
+    if (nextBookPly >= line.length) {
       finish(nextGame, `主线完成！你在 ${lessonMoves} 个训练节点中命中 ${score + 1} 个。`);
       return;
-    }
-
-    const controller = new AbortController();
-    abortRef.current?.abort();
-    abortRef.current = controller;
-    try {
-      const result = await new StockfishAdapter().analyze(nextGame.fen(), controller.signal);
-      const candidates = result.lines.filter((item) => item.pv[0]);
-      const choice = candidates[Math.min(candidates.length - 1, attempts % Math.min(2, Math.max(candidates.length, 1)))];
-      let reply = applyUciMove(nextGame, choice?.pv[0]);
-      const fallback = reply ? undefined : nextGame.moves()[0];
-      if (!reply && fallback) reply = nextGame.move(fallback);
-      if (!controller.signal.aborted) {
-        setFen(nextGame.fen());
-        setBusy(false);
-        setFeedback(reply ? `你已偏离示例主线，电脑根据当前局面选择了 ${reply.san}。继续寻找合理计划。` : "你已偏离示例主线；电脑暂无可用回应，请继续完成局面。" );
-      }
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        const fallback = nextGame.moves()[0];
-        const reply = fallback ? nextGame.move(fallback) : null;
-        setFen(nextGame.fen());
-        setBusy(false);
-        setFeedback(reply ? `引擎暂不可用，电脑以合法走法 ${reply.san} 继续了训练；你仍可完成本轮。` : `当前局面已结束：${error instanceof Error ? error.message : "没有可走着法"}`);
-      }
     }
   }
 
@@ -145,20 +119,24 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     if (busy || done || !studentTurn) return;
     const piece = game.get(square);
     if (selected && legalTargets.includes(square)) {
-      const nextGame = new Chess(fen);
       const expectedMove = expected;
-      const actual = nextGame.move({ from: selected, to: square, promotion: "q" });
-      if (!actual) return;
-      const correct = onBook && isExpectedOpeningMove(actual, expectedMove);
-      const nextBookPly = correct ? bookPly + 1 : bookPly;
+      const attempt = attemptOpeningMove(fen, selected, square, expectedMove);
+      if (!attempt) return;
       setAttempts((value) => value + 1);
-      if (correct) setScore((value) => value + 1);
-      else setOnBook(false);
       setSelected(null);
+      if (!attempt.accepted) {
+        setFeedbackTone("error");
+        setFeedback(`走错了：${attempt.actual.san} 不是本课着法。棋盘已回到当前局面，请重新尝试这一手。${mode === "learn" ? ` 本课目标是 ${expectedMove?.san ?? "正确着法"}。` : ""}`);
+        return;
+      }
+      const nextGame = new Chess(attempt.fen);
+      const nextBookPly = bookPly + 1;
+      setScore((value) => value + 1);
       setBusy(true);
-      setFen(nextGame.fen());
-      setFeedback(correct ? `正确：${actual.san}。电脑正在回应…` : `这步 ${actual.san} 可以继续下，但本课主线是 ${expectedMove?.san ?? "自由选择"}。电脑正在适应你的变化…`);
-      void respondFromPosition(nextGame, nextBookPly, correct, actual.san);
+      setFen(attempt.fen);
+      setFeedbackTone("correct");
+      setFeedback(`正确：${attempt.actual.san}。电脑正在按课程回应…`);
+      respondFromPosition(nextGame, nextBookPly, attempt.actual.san);
       return;
     }
     if (piece?.color === studentColor) setSelected(square);
@@ -193,9 +171,9 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
         <button className="hint-button" disabled={!expected || expected.color !== studentColor || done} onClick={() => expected && setFeedback(`固定课程提示：${fixedMoveExplanation(expected, variation.focus)}`)}><Lightbulb size={15} />查看本步意图</button>
         <div className="theory-sources"><span>资料来源</span>{theory.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.label}<ExternalLink size={12} /></a>)}</div>
       </section>
-      <section className="panel trainer-feedback"><div className="panel-title"><Bot size={17} /><span>陪练反馈</span></div><p aria-live="polite">{feedback}</p>{done && <div className="trainer-result"><Trophy size={22} /><div><strong>{attempts ? Math.round(score / attempts * 100) : 0} 分</strong><span>主线命中率</span></div></div>}</section>
+      <section className={`panel trainer-feedback ${feedbackTone}`}><div className="panel-title"><Bot size={17} /><span>陪练反馈</span></div><p aria-live="assertive">{feedback}</p>{done && <div className="trainer-result"><Trophy size={22} /><div><strong>{attempts ? Math.round(score / attempts * 100) : 0} 分</strong><span>主线命中率</span></div></div>}</section>
       <div className="trainer-actions"><button onClick={resetLesson}><RotateCcw size={16} />重新训练</button><button className="primary" onClick={() => onReviewLine(variation.pgn)}>进入完整复盘<ChevronRight size={16} /></button></div>
-      <p className="trainer-privacy">理论正文与本步意图来自本地课程库；偏离主线后才由本地 Stockfish 自适应回应，均不调用大模型。</p>
+      <p className="trainer-privacy">答错后保留当前局面并重新尝试；课程训练、本步提示和电脑应手均来自本地固定课程，不调用大模型。</p>
     </aside>
   </div>;
 }

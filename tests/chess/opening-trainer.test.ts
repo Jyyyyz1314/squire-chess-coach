@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Chess } from "chess.js";
 import { OPENING_SAMPLES } from "../../lib/chess/opening-samples";
 import { OPENING_THEORY_COURSES, openingVariationCount } from "../../lib/chess/opening-variations";
-import { applyUciMove, fixedMoveExplanation, isExpectedOpeningMove, moveKey, openingTrainingLine, openingTrainingLineFromPgn } from "../../lib/chess/opening-trainer";
+import { applyUciMove, attemptOpeningMove, fixedMoveExplanation, isExpectedOpeningMove, moveKey, openingTrainingLine, openingTrainingLineFromPgn } from "../../lib/chess/opening-trainer";
 
 describe("opening trainer", () => {
   it("provides ten lessons with 8 to 10 complete moves", () => {
@@ -36,5 +36,16 @@ describe("opening trainer", () => {
     expect(applyUciMove(game, "e2e4")?.san).toBe("e4");
     expect(applyUciMove(game, "not-a-move")).toBeNull();
     expect(fixedMoveExplanation(expected, "控制中心")).toContain("本变例的核心");
+  });
+
+  it("rejects a wrong training move without changing the position", () => {
+    const game = new Chess();
+    const expected = openingTrainingLine(OPENING_SAMPLES[0])[0];
+    const wrong = attemptOpeningMove(game.fen(), "d2", "d4", expected);
+    expect(wrong?.accepted).toBe(false);
+    expect(wrong?.fen).toBe(game.fen());
+    const correct = attemptOpeningMove(game.fen(), "e2", "e4", expected);
+    expect(correct?.accepted).toBe(true);
+    expect(correct?.fen).not.toBe(game.fen());
   });
 });

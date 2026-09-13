@@ -1,4 +1,4 @@
-import { Chess, Move } from "chess.js";
+import { Chess, Move, Square } from "chess.js";
 import type { OpeningSample } from "./opening-samples";
 
 export type TrainingMove = Pick<Move, "from" | "to" | "san" | "color"> & { promotion?: string };
@@ -38,6 +38,15 @@ export function moveKey(move: Pick<TrainingMove, "from" | "to" | "promotion">) {
 
 export function isExpectedOpeningMove(actual: Pick<TrainingMove, "from" | "to" | "promotion">, expected?: TrainingMove) {
   return Boolean(expected && moveKey(actual) === moveKey(expected));
+}
+
+export function attemptOpeningMove(fen: string, from: Square, to: Square, expected?: TrainingMove) {
+  const game = new Chess(fen);
+  const originalFen = game.fen();
+  const actual = game.move({ from, to, promotion: "q" });
+  if (!actual) return null;
+  const accepted = isExpectedOpeningMove(actual, expected);
+  return { accepted, actual, fen: accepted ? game.fen() : originalFen };
 }
 
 export function applyUciMove(game: Chess, uci?: string) {

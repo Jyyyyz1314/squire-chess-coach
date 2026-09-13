@@ -35,3 +35,7 @@ button { font: inherit; }
 .theory-sources>span { width:100%; color:#64748b; font-size:.64rem; }
 .theory-sources a { display:inline-flex; align-items:center; gap:.2rem; color:#67e8f9; font-size:.65rem; text-decoration:none; }
 .theory-sources a:hover { text-decoration:underline; }
+.trainer-feedback.error { border-color:#fb718566; background:linear-gradient(145deg,#3f172020,#101827); animation:trainer-error-pulse .28s ease-out; }
+.trainer-feedback.error .panel-title,.trainer-feedback.error>p { color:#fecdd3; }
+.trainer-feedback.correct { border-color:#a3e63544; }
+@keyframes trainer-error-pulse { 50% { transform:translateX(3px); } }
