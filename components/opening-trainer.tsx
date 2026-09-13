@@ -90,7 +90,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   }
 
   function respondFromPosition(nextGame: Chess, nextBookPly: number, playedSan: string) {
-    if (nextGame.isGameOver() || plyFromFen(nextGame.fen()) >= 20) {
+    if (nextGame.isGameOver()) {
       finish(nextGame, `训练结束。你完成了 ${attempts + 1} 次选择，其中 ${score + 1} 次命中主线。`);
       return;
     }
@@ -164,7 +164,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     <aside className="trainer-sidebar">
       <section className="panel trainer-config"><div className="panel-title"><Target size={17} /><span>训练设置</span></div>
         <label>开局课程<select value={sampleId} onChange={(event) => changeCourse(event.target.value)}>{OPENING_SAMPLES.map((item) => <option key={item.id} value={item.id}>{item.eco} · {item.name}</option>)}</select></label>
-        <label>学习变例（{theory.variations.length} 条）<select value={variation.id} onChange={(event) => setVariationId(event.target.value)}>{theory.variations.map((item) => <option key={item.id} value={item.id}>{item.eco} · {item.name}</option>)}</select></label>
+        <label>学习变例（{theory.variations.length} 条 · 每条 12 回合）<select value={variation.id} onChange={(event) => setVariationId(event.target.value)}>{theory.variations.map((item) => <option key={item.id} value={item.id}>{item.eco} · {item.name}</option>)}</select></label>
         <div className="trainer-options"><div><span>执棋方</span><button className={studentColor === "w" ? "active" : ""} onClick={() => setStudentColor("w")}>白方</button><button className={studentColor === "b" ? "active" : ""} onClick={() => setStudentColor("b")}>黑方</button></div><div><span>模式</span><button className={mode === "learn" ? "active" : ""} onClick={() => setMode("learn")}>教学</button><button className={mode === "test" ? "active" : ""} onClick={() => setMode("test")}>测试</button></div></div>
       </section>
       <section className="panel trainer-lesson"><div className="panel-title"><BookOpenCheck size={17} /><span>固定理论讲解</span></div><p>{theory.introduction}</p><div className="variation-focus"><ListTree size={15} /><div><small>{variation.eco} · {variation.name}</small><strong>{variation.focus}</strong></div></div><ul className="theory-plans">{theory.plans.map((plan) => <li key={plan}>{plan}</li>)}</ul><div className="lesson-focus"><small>{onBook ? `第 ${Math.floor(bookPly / 2) + 1} 回合` : "自由变化"}</small><strong>{mode === "learn" && expected?.color === studentColor ? `尝试走：${expected.san}` : mode === "test" ? "找出最符合本课思路的走法" : "观察电脑回应"}</strong></div>
@@ -173,7 +173,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
       </section>
       <section className={`panel trainer-feedback ${feedbackTone}`}><div className="panel-title"><Bot size={17} /><span>陪练反馈</span></div><p aria-live="assertive">{feedback}</p>{done && <div className="trainer-result"><Trophy size={22} /><div><strong>{attempts ? Math.round(score / attempts * 100) : 0} 分</strong><span>主线命中率</span></div></div>}</section>
       <div className="trainer-actions"><button onClick={resetLesson}><RotateCcw size={16} />重新训练</button><button className="primary" onClick={() => onReviewLine(variation.pgn)}>进入完整复盘<ChevronRight size={16} /></button></div>
-      <p className="trainer-privacy">答错后保留当前局面并重新尝试；课程训练、本步提示和电脑应手均来自本地固定课程，不调用大模型。</p>
+      <p className="trainer-privacy">每条路线延伸至 12 回合：开局分支来自固定课程库，后续由 Stockfish 预先分析并固化；训练时不调用大模型。</p>
     </aside>
   </div>;
 }

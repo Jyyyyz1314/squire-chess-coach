@@ -1,3 +1,5 @@
+import generatedDeepLines from "./opening-deep-lines.json";
+
 export type TheorySource = { label: string; url: string };
 
 export type OpeningVariation = {
@@ -17,6 +19,7 @@ export type OpeningTheoryCourse = {
 };
 
 type VariationSeed = [id: string, eco: string, name: string, pgn: string, focus: string];
+const DEEP_LINES = generatedDeepLines as Record<string, string>;
 
 const LICHESS_OPENINGS: TheorySource = {
   label: "Lichess 开局数据库（CC0）",
@@ -35,7 +38,13 @@ function course(
     introduction,
     plans,
     sources: [LICHESS_OPENINGS, { label: "Wikibooks 开局理论", url: wikiUrl }],
-    variations: variations.map(([id, eco, name, pgn, focus]) => ({ id, eco, name, pgn, focus })),
+    variations: variations.map(([id, eco, name, pgn, focus]) => ({
+      id,
+      eco,
+      name,
+      pgn: DEEP_LINES[`${sampleId}/${id}`] ?? pgn,
+      focus,
+    })),
   };
 }
 

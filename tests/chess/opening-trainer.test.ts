@@ -21,7 +21,7 @@ describe("opening trainer", () => {
       expect(course.variations.length, course.sampleId).toBeGreaterThanOrEqual(11);
       expect(course.sources.length, course.sampleId).toBeGreaterThanOrEqual(2);
       for (const variation of course.variations) {
-        expect(openingTrainingLineFromPgn(variation.pgn).length, `${course.sampleId}/${variation.name}`).toBeGreaterThanOrEqual(2);
+        expect(openingTrainingLineFromPgn(variation.pgn).length, `${course.sampleId}/${variation.name}`).toBeGreaterThanOrEqual(24);
         expect(variation.focus.length, variation.name).toBeGreaterThan(10);
       }
     }
