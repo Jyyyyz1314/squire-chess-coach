@@ -16,4 +16,8 @@ When distributing these assets, retain this notice, the license text, and the up
 
 ## Lichess chess openings data
 
-The ECO identifiers, standard opening names, and representative move sequences used to prepare `lib/chess/opening-samples.ts` were checked against the [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) data set. The upstream collection is dedicated to the public domain under CC0-1.0. The Chinese teaching summaries and per-move notes in this project are original application content.
+The ECO identifiers, standard opening names, and representative move sequences used to prepare `lib/chess/opening-samples.ts` and `lib/chess/opening-variations.ts` were checked against the [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) data set. The upstream collection is dedicated to the public domain under CC0-1.0. The Chinese teaching summaries, variation focuses, strategic plans, and deterministic per-move explanations in this project are original application content.
+
+## Wikibooks Chess Opening Theory
+
+The fixed opening lessons link to relevant pages in [Wikibooks Chess Opening Theory](https://en.wikibooks.org/wiki/Chess_Opening_Theory) for further reading. The application text is an original Chinese summary rather than a reproduction of those articles. Wikibooks text is available under CC BY-SA 4.0 unless a page states otherwise; each course exposes its source link in the interface.

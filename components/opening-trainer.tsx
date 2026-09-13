@@ -3,9 +3,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, Square } from "chess.js";
-import { BookOpenCheck, Bot, ChevronRight, Lightbulb, RotateCcw, Target, Trophy } from "lucide-react";
+import { BookOpenCheck, Bot, ChevronRight, ExternalLink, Lightbulb, ListTree, RotateCcw, Target, Trophy } from "lucide-react";
 import { OPENING_SAMPLES } from "@/lib/chess/opening-samples";
-import { applyUciMove, isExpectedOpeningMove, openingTrainingLine } from "@/lib/chess/opening-trainer";
+import { OPENING_THEORY_BY_SAMPLE } from "@/lib/chess/opening-variations";
+import { applyUciMove, fixedMoveExplanation, isExpectedOpeningMove, openingTrainingLineFromPgn } from "@/lib/chess/opening-trainer";
 import { StockfishAdapter } from "@/lib/engine/stockfish";
 
 type StudentColor = "w" | "b";
@@ -24,6 +25,7 @@ function plyFromFen(position: string) {
 
 export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) => void }) {
   const [sampleId, setSampleId] = useState(OPENING_SAMPLES[0].id);
+  const [variationId, setVariationId] = useState(() => OPENING_THEORY_BY_SAMPLE[OPENING_SAMPLES[0].id].variations[0].id);
   const [studentColor, setStudentColor] = useState<StudentColor>("w");
   const [mode, setMode] = useState<TrainingMode>("learn");
   const [fen, setFen] = useState(() => new Chess().fen());
@@ -37,7 +39,9 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   const [feedback, setFeedback] = useState("请选择棋子，走出你认为正确的开局着法。");
   const abortRef = useRef<AbortController | null>(null);
   const sample = OPENING_SAMPLES.find((item) => item.id === sampleId) ?? OPENING_SAMPLES[0];
-  const line = useMemo(() => openingTrainingLine(sample), [sample]);
+  const theory = OPENING_THEORY_BY_SAMPLE[sample.id];
+  const variation = theory.variations.find((item) => item.id === variationId) ?? theory.variations[0];
+  const line = useMemo(() => openingTrainingLineFromPgn(variation.pgn), [variation.pgn]);
   const game = useMemo(() => new Chess(fen), [fen]);
   const squares = useMemo(() => coordinates(studentColor), [studentColor]);
   const legalTargets = selected ? game.moves({ square: selected, verbose: true }).map((move) => move.to) : [];
@@ -72,7 +76,12 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     return () => abortRef.current?.abort();
     // Resetting is intentionally tied to lesson configuration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sampleId, studentColor, mode]);
+  }, [sampleId, variationId, studentColor, mode]);
+
+  function changeCourse(nextSampleId: string) {
+    setSampleId(nextSampleId);
+    setVariationId(OPENING_THEORY_BY_SAMPLE[nextSampleId].variations[0].id);
+  }
 
   function finish(nextGame: Chess, message: string) {
     setFen(nextGame.fen());
@@ -98,7 +107,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
       }
       setFen(nextGame.fen());
       setBusy(false);
-      setFeedback(sample.notes[nextBookPly + 1] ?? `正确：${playedSan}。电脑按主线回应 ${reply.san}，轮到你继续。`);
+      setFeedback(`正确：${playedSan}。电脑按主线回应。${fixedMoveExplanation(reply, variation.focus)}`);
       return;
     }
     if (wasCorrect && nextBookPly >= line.length) {
@@ -159,10 +168,10 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   return <div className="trainer-layout mx-auto max-w-[1520px] px-4 py-6 xl:px-7">
     <section className="trainer-stage">
       <div className="trainer-heading">
-        <div><p>开局训练 · {sample.eco}</p><h1>{sample.name}</h1><span>{sample.family} · {Math.ceil(line.length / 2)} 回合拆解</span></div>
+        <div><p>开局训练 · {variation.eco}</p><h1>{variation.name}</h1><span>{sample.name} · {Math.ceil(line.length / 2)} 回合固定课程</span></div>
         <div className="trainer-progress"><span>训练进度</span><strong>{progress}%</strong><div><i style={{ width: `${progress}%` }} /></div></div>
       </div>
-      <div className="board-shell"><div className="chessboard" aria-label={`${sample.name}训练棋盘`}>{squares.map((square, index) => {
+      <div className="board-shell"><div className="chessboard" aria-label={`${variation.name}训练棋盘`}>{squares.map((square, index) => {
         const piece = game.get(square);
         const row = Math.floor(index / 8);
         const col = index % 8;
@@ -176,15 +185,17 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     </section>
     <aside className="trainer-sidebar">
       <section className="panel trainer-config"><div className="panel-title"><Target size={17} /><span>训练设置</span></div>
-        <label>开局课程<select value={sampleId} onChange={(event) => setSampleId(event.target.value)}>{OPENING_SAMPLES.map((item) => <option key={item.id} value={item.id}>{item.eco} · {item.name}</option>)}</select></label>
+        <label>开局课程<select value={sampleId} onChange={(event) => changeCourse(event.target.value)}>{OPENING_SAMPLES.map((item) => <option key={item.id} value={item.id}>{item.eco} · {item.name}</option>)}</select></label>
+        <label>学习变例（{theory.variations.length} 条）<select value={variation.id} onChange={(event) => setVariationId(event.target.value)}>{theory.variations.map((item) => <option key={item.id} value={item.id}>{item.eco} · {item.name}</option>)}</select></label>
         <div className="trainer-options"><div><span>执棋方</span><button className={studentColor === "w" ? "active" : ""} onClick={() => setStudentColor("w")}>白方</button><button className={studentColor === "b" ? "active" : ""} onClick={() => setStudentColor("b")}>黑方</button></div><div><span>模式</span><button className={mode === "learn" ? "active" : ""} onClick={() => setMode("learn")}>教学</button><button className={mode === "test" ? "active" : ""} onClick={() => setMode("test")}>测试</button></div></div>
       </section>
-      <section className="panel trainer-lesson"><div className="panel-title"><BookOpenCheck size={17} /><span>本课目标</span></div><p>{sample.summary}</p><div className="lesson-focus"><small>{onBook ? `第 ${Math.floor(bookPly / 2) + 1} 回合` : "自由变化"}</small><strong>{mode === "learn" && expected?.color === studentColor ? `尝试走：${expected.san}` : mode === "test" ? "找出最符合本课思路的走法" : "观察电脑回应"}</strong></div>
-        <button className="hint-button" disabled={!expected || expected.color !== studentColor || done} onClick={() => setFeedback(`提示：本课主线是 ${expected?.san}。${sample.notes[bookPly + 1] ?? sample.summary}`)}><Lightbulb size={15} />查看提示</button>
+      <section className="panel trainer-lesson"><div className="panel-title"><BookOpenCheck size={17} /><span>固定理论讲解</span></div><p>{theory.introduction}</p><div className="variation-focus"><ListTree size={15} /><div><small>{variation.eco} · {variation.name}</small><strong>{variation.focus}</strong></div></div><ul className="theory-plans">{theory.plans.map((plan) => <li key={plan}>{plan}</li>)}</ul><div className="lesson-focus"><small>{onBook ? `第 ${Math.floor(bookPly / 2) + 1} 回合` : "自由变化"}</small><strong>{mode === "learn" && expected?.color === studentColor ? `尝试走：${expected.san}` : mode === "test" ? "找出最符合本课思路的走法" : "观察电脑回应"}</strong></div>
+        <button className="hint-button" disabled={!expected || expected.color !== studentColor || done} onClick={() => expected && setFeedback(`固定课程提示：${fixedMoveExplanation(expected, variation.focus)}`)}><Lightbulb size={15} />查看本步意图</button>
+        <div className="theory-sources"><span>资料来源</span>{theory.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.label}<ExternalLink size={12} /></a>)}</div>
       </section>
       <section className="panel trainer-feedback"><div className="panel-title"><Bot size={17} /><span>陪练反馈</span></div><p aria-live="polite">{feedback}</p>{done && <div className="trainer-result"><Trophy size={22} /><div><strong>{attempts ? Math.round(score / attempts * 100) : 0} 分</strong><span>主线命中率</span></div></div>}</section>
-      <div className="trainer-actions"><button onClick={resetLesson}><RotateCcw size={16} />重新训练</button><button className="primary" onClick={() => onReviewLine(sample.pgn)}>进入完整复盘<ChevronRight size={16} /></button></div>
-      <p className="trainer-privacy">偏离主线后由本地 Stockfish 自适应回应，局面不会上传。</p>
+      <div className="trainer-actions"><button onClick={resetLesson}><RotateCcw size={16} />重新训练</button><button className="primary" onClick={() => onReviewLine(variation.pgn)}>进入完整复盘<ChevronRight size={16} /></button></div>
+      <p className="trainer-privacy">理论正文与本步意图来自本地课程库；偏离主线后才由本地 Stockfish 自适应回应，均不调用大模型。</p>
     </aside>
   </div>;
 }

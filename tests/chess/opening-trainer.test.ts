@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Chess } from "chess.js";
 import { OPENING_SAMPLES } from "../../lib/chess/opening-samples";
-import { applyUciMove, isExpectedOpeningMove, moveKey, openingTrainingLine } from "../../lib/chess/opening-trainer";
+import { OPENING_THEORY_COURSES, openingVariationCount } from "../../lib/chess/opening-variations";
+import { applyUciMove, fixedMoveExplanation, isExpectedOpeningMove, moveKey, openingTrainingLine, openingTrainingLineFromPgn } from "../../lib/chess/opening-trainer";
 
 describe("opening trainer", () => {
   it("provides ten lessons with 8 to 10 complete moves", () => {
@@ -13,6 +14,19 @@ describe("opening trainer", () => {
     }
   });
 
+  it("provides at least eleven sourced, legal variations for every opening", () => {
+    expect(OPENING_THEORY_COURSES).toHaveLength(OPENING_SAMPLES.length);
+    expect(openingVariationCount()).toBeGreaterThanOrEqual(110);
+    for (const course of OPENING_THEORY_COURSES) {
+      expect(course.variations.length, course.sampleId).toBeGreaterThanOrEqual(11);
+      expect(course.sources.length, course.sampleId).toBeGreaterThanOrEqual(2);
+      for (const variation of course.variations) {
+        expect(openingTrainingLineFromPgn(variation.pgn).length, `${course.sampleId}/${variation.name}`).toBeGreaterThanOrEqual(2);
+        expect(variation.focus.length, variation.name).toBeGreaterThan(10);
+      }
+    }
+  });
+
   it("compares book moves and safely applies an engine UCI move", () => {
     const expected = openingTrainingLine(OPENING_SAMPLES[0])[0];
     expect(moveKey(expected)).toBe("e2e4");
@@ -21,5 +35,6 @@ describe("opening trainer", () => {
     const game = new Chess();
     expect(applyUciMove(game, "e2e4")?.san).toBe("e4");
     expect(applyUciMove(game, "not-a-move")).toBeNull();
+    expect(fixedMoveExplanation(expected, "控制中心")).toContain("本变例的核心");
   });
 });
