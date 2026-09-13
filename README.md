@@ -4,7 +4,7 @@
 
 ![Squire — AI chess analysis](public/images/knight-hero.png)
 
-Squire 是一款中文国际象棋复盘原型：浏览器内的 Stockfish 负责给出客观分数和候选变化，AI 老师负责解释计划、错误原因与可迁移的棋理。棋谱和个人笔记留在本地；只有主动请求老师时，当前局面与问题才会发送给你配置的模型服务。
+Squire 是一款中文国际象棋复盘原型：浏览器内的 Stockfish 负责给出客观分数和候选变化，AI 老师负责解释计划、错误原因与可迁移的棋理，Lichess 同步则用近期实战建立棋风与进步画像。棋谱和个人笔记留在本地；只有主动请求老师时，当前局面与问题才会发送给你配置的模型服务。
 
 ![Squire 界面](public/images/readme-cover.png)
 
@@ -15,6 +15,7 @@ Squire 是一款中文国际象棋复盘原型：浏览器内的 Stockfish 负�
 - 导入普通或带注释/变例的 Lichess PGN，也可直接粘贴棋谱文本。
 - 导出/导入 Squire JSON 学习档案，保留逐步笔记且不保存模型回答。
 - 10 个内置经典开局示例与中文学习提示。
+- Lichess OAuth2 + PKCE 安全登录、近期棋局同步、棋风/质量/进步趋势画像与一键复盘。
 - 服务端输入校验、同源检查、超时重试、请求合并、短期缓存和基础限流。
 
 ## 本地运行
@@ -39,6 +40,17 @@ COACH_RATE_LIMIT_PER_DAY=120
 ```
 
 修改配置后重启开发服务器。密钥只在服务端读取；不要使用 `NEXT_PUBLIC_` 前缀，也不要提交 `.env.local`。`COACH_BASE_URL` 支持服务根路径或完整的 `/chat/completions` 地址。
+
+启用 Lichess 登录与棋手画像时，再加入：
+
+```env
+# 可留空；默认使用当前站点域名作为公开 OAuth client id
+LICHESS_CLIENT_ID=
+# 至少 32 个随机字符，只用于服务端加密 Lichess 访问令牌
+LICHESS_SESSION_SECRET=请替换为随机长字符串
+```
+
+Lichess 使用无需客户端密钥的 OAuth2 PKCE。访问令牌只保存在加密、HttpOnly、SameSite Cookie 中；同步后的最多 60 盘棋局与画像缓存保存在当前浏览器。部署域名变化时需要让用户重新授权。
 
 ## 数据格式
 

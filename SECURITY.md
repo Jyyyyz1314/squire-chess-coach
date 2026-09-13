@@ -9,9 +9,11 @@
 ## 密钥与数据
 
 - `COACH_API_KEY` 只能放在部署平台的服务端 Secret 或本地 `.env.local` 中。
+- `LICHESS_SESSION_SECRET` 必须是至少 32 字符的独立随机值；不得复用模型密钥或提交到 Git。
 - `.env.local`、导出的用户棋谱和运行时缓存不应提交到 Git。
 - 泄露密钥后应立即在模型供应商处撤销并轮换；仅从 Git 历史删除并不够。
 - AI 老师请求会把当前 FEN、候选变化、开局名和用户问题发送给所配置的模型供应商；普通棋盘分析由浏览器内的 Stockfish 完成。
+- Lichess access token 只保存在加密的 HttpOnly Cookie 中。用户断开连接时会尝试在 Lichess 撤销令牌，并始终删除本地会话 Cookie。
 
 ## 支持范围
 
