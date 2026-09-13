@@ -32,6 +32,8 @@ describe("Lichess player profile", () => {
     expect(profile.progress).toBeGreaterThan(10);
     expect(profile.progressLabel).toBe("近期明显进步");
     expect(profile.openings).toHaveLength(2);
+    expect(profile.dimensions).toHaveLength(6);
+    expect(profile.dimensions.every((item) => item.value >= 0 && item.value <= 100)).toBe(true);
   });
 
   it("does not invent a quality score when Lichess has no analysis", () => {
@@ -42,6 +44,7 @@ describe("Lichess player profile", () => {
     expect(profile.averageAccuracy).toBeNull();
     expect(profile.blundersPerGame).toBeNull();
     expect(profile.progress).toBeNull();
+    expect(profile.dimensions.find((item) => item.key === "consistency")?.note).toContain("临时基线");
     expect(profile.priorities.join(" ")).toContain("云分析");
   });
 

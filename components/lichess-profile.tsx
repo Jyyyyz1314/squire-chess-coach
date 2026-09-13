@@ -112,7 +112,7 @@ export function LichessProfile({ onOpenGame }: { onOpenGame: (pgn: string) => vo
       <DialogContent className="lichess-dialog border-white/10 bg-[#111827] text-slate-100 sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><span className="lichess-mark">♞</span>Lichess 棋手画像</DialogTitle>
-          <DialogDescription className="text-slate-400">同步你的近期实战，识别风格、行棋质量与最值得优先训练的环节。</DialogDescription>
+          <DialogDescription className="text-slate-400">同步你的近期实战，从六个维度识别棋风、行棋质量与最值得优先训练的环节。</DialogDescription>
         </DialogHeader>
         {session === null ? <div className="profile-empty"><LoaderCircle className="animate-spin" /><p>正在检查登录状态…</p></div> : !session.configured ? <div className="profile-empty">
           <ShieldCheck size={34} />
@@ -139,7 +139,7 @@ export function LichessProfile({ onOpenGame }: { onOpenGame: (pgn: string) => vo
               <article><small>近期趋势</small><strong className={profile.progress !== null && profile.progress >= 3 ? "positive" : profile.progress !== null && profile.progress <= -3 ? "negative" : ""}>{profile.progress === null ? "样本不足" : `${profile.progress >= 0 ? "+" : ""}${profile.progress}`}</strong><span>{profile.progressLabel}</span></article>
             </div>
             <div className="profile-columns">
-              <section><h3>风格雷达</h3><div className="profile-meter"><span>主动进攻</span><div><i style={{ width: `${profile.aggression}%` }} /></div><b>{profile.aggression}</b></div><div className="profile-meter solid"><span>局面稳健</span><div><i style={{ width: `${profile.solidity}%` }} /></div><b>{profile.solidity}</b></div><h3 className="subheading">目前优势</h3><ul>{profile.strengths.map((item) => <li key={item}>{item}</li>)}</ul></section>
+              <section><h3>六维能力画像</h3><p className="profile-section-hint">它描述近期行为倾向，不等同于等级分。</p><div className="profile-dimensions">{profile.dimensions.map((item) => <div className="profile-meter" key={item.key} title={item.note}><span>{item.label}</span><div><i style={{ width: `${item.value}%` }} /></div><b>{item.value}</b></div>)}</div><h3 className="subheading">目前优势</h3><ul>{profile.strengths.map((item) => <li key={item}>{item}</li>)}</ul></section>
               <section><h3>优先训练</h3><ol>{profile.priorities.map((item, index) => <li key={item}><span>{index + 1}</span>{item}</li>)}</ol></section>
             </div>
             <div className="profile-lower">

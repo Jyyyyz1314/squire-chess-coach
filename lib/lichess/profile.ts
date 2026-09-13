@@ -14,6 +14,7 @@ export type PlayerProfile = {
   style: "主动进攻型" | "稳健防守型" | "均衡型" | "战术实战型";
   aggression: number;
   solidity: number;
+  dimensions: Array<{ key: string; label: string; value: number; note: string }>;
   progress: number | null;
   progressLabel: string;
   strengths: string[];
@@ -147,6 +148,21 @@ export function buildPlayerProfile(games: LichessGame[], username: string): Play
   const losses = metrics.length - wins - draws;
   const averageAccuracy = average(qualities);
   const blundersPerGame = average(blunderValues);
+  const scoreRate = metrics.length ? (wins + draws * 0.5) / metrics.length : 0;
+  const longGameRate = metrics.length ? metrics.filter((item) => item.playerMoves >= 30).length / metrics.length : 0;
+  const tacticalActivity = Math.round(clamp(26 + captureRate * 185 + checkRate * 330));
+  const kingSafety = Math.round(clamp(25 + castleRate * 68 - earlyQueenRate * 8));
+  const openingDiscipline = Math.round(clamp(58 + castleRate * 28 - earlyQueenRate * 34));
+  const consistency = Math.round(clamp(averageAccuracy ?? (52 + scoreRate * 24 - (blundersPerGame ?? 0) * 9)));
+  const endgameExperience = Math.round(clamp(24 + longGameRate * 68 + scoreRate * 8));
+  const dimensions = [
+    { key: "initiative", label: "主动性", value: aggression, note: "根据吃子、将军与早期主动行动估算" },
+    { key: "tactics", label: "战术活跃", value: tacticalActivity, note: "根据战术接触与将军频率估算" },
+    { key: "king-safety", label: "王的安全", value: kingSafety, note: "根据易位习惯与开局节奏估算" },
+    { key: "opening", label: "开局纪律", value: openingDiscipline, note: "根据发展顺序、易位与过早出后估算" },
+    { key: "consistency", label: "行棋稳定", value: consistency, note: averageAccuracy === null ? "暂无云分析，以实战表现建立临时基线" : "优先采用 Lichess 行棋质量数据" },
+    { key: "endgame", label: "残局经验", value: endgameExperience, note: "根据进入长局的频率与实战得分估算" },
+  ];
   const strengths: string[] = [];
   if (castleRate >= 0.72) strengths.push("王的安全意识稳定");
   if (averageAccuracy !== null && averageAccuracy >= 82) strengths.push("行棋质量较稳定");
@@ -174,6 +190,7 @@ export function buildPlayerProfile(games: LichessGame[], username: string): Play
     style,
     aggression,
     solidity,
+    dimensions,
     progress: progress === null ? null : Math.round(progress * 10) / 10,
     progressLabel: progress === null ? "分析样本不足" : progress >= 3 ? "近期明显进步" : progress <= -3 ? "近期状态回落" : "近期表现稳定",
     strengths: strengths.slice(0, 3),
