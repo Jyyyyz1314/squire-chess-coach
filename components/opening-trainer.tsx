@@ -1,12 +1,13 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- chess-piece SVGs are small local assets rendered on 64 fixed squares */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, Square } from "chess.js";
 import { BookOpenCheck, Bot, ChevronRight, ExternalLink, Lightbulb, ListTree, RotateCcw, Target, Trophy } from "lucide-react";
 import { OPENING_SAMPLES } from "@/lib/chess/opening-samples";
 import { OPENING_THEORY_BY_SAMPLE } from "@/lib/chess/opening-variations";
 import { attemptOpeningMove, fixedMoveExplanation, openingTrainingLineFromPgn } from "@/lib/chess/opening-trainer";
+import { CoachConfig } from "@/lib/coach/config";
 
 type StudentColor = "w" | "b";
 type TrainingMode = "learn" | "test";
@@ -22,7 +23,10 @@ function plyFromFen(position: string) {
   return (Math.max(1, Number.parseInt(fullMove, 10) || 1) - 1) * 2 + (turn === "b" ? 1 : 0);
 }
 
-export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) => void }) {
+type TrainingProgress = Record<string, { completedAt: string; bestAccuracy: number }>;
+const PROGRESS_KEY = "squire-opening-progress-v1";
+
+export function OpeningTrainer({ onReviewLine, coachConfig, onOpenCoachSettings }: { onReviewLine: (pgn: string) => void; coachConfig: CoachConfig | null; onOpenCoachSettings: () => void }) {
   const [sampleId, setSampleId] = useState(OPENING_SAMPLES[0].id);
   const [variationId, setVariationId] = useState(() => OPENING_THEORY_BY_SAMPLE[OPENING_SAMPLES[0].id].variations[0].id);
   const [studentColor, setStudentColor] = useState<StudentColor>("w");
@@ -37,6 +41,9 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   const [score, setScore] = useState(0);
   const [feedback, setFeedback] = useState("请选择棋子，走出你认为正确的开局着法。");
   const [feedbackTone, setFeedbackTone] = useState<"neutral" | "correct" | "error">("neutral");
+  const [savedProgress, setSavedProgress] = useState<TrainingProgress>({});
+  const [aiBusy, setAiBusy] = useState(false);
+  const feedbackRequest = useRef(0);
   const sample = OPENING_SAMPLES.find((item) => item.id === sampleId) ?? OPENING_SAMPLES[0];
   const theory = OPENING_THEORY_BY_SAMPLE[sample.id];
   const variation = theory.variations.find((item) => item.id === variationId) ?? theory.variations[0];
@@ -48,6 +55,43 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   const studentTurn = game.turn() === studentColor;
   const lessonMoves = line.filter((move) => move.color === studentColor).length;
   const progress = Math.min(100, Math.round(plyFromFen(fen) / Math.max(line.length, 1) * 100));
+  const totalGoals = Object.values(OPENING_THEORY_BY_SAMPLE).reduce((total, course) => total + course.variations.length * 2, 0);
+  const completedGoals = Object.keys(savedProgress).length;
+  const courseGoalPrefix = `${sample.id}/`;
+  const courseCompleted = Object.keys(savedProgress).filter((key) => key.startsWith(courseGoalPrefix)).length;
+
+  useEffect(() => {
+    // Progress is browser-local and can only be restored after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { setSavedProgress(JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? "{}") as TrainingProgress); }
+    catch { setSavedProgress({}); }
+  }, []);
+
+  function markCompleted() {
+    const key = `${sample.id}/${variation.id}/${studentColor}`;
+    const accuracy = attempts + 1 ? Math.round((score + 1) / (attempts + 1) * 100) : 100;
+    setSavedProgress((current) => {
+      const next = { ...current, [key]: { completedAt: current[key]?.completedAt ?? new Date().toISOString(), bestAccuracy: Math.max(current[key]?.bestAccuracy ?? 0, accuracy) } };
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  async function requestTrainingFeedback(positionFen: string, actualSan: string, expectedSan: string, correct: boolean, immediate: string, replySan?: string) {
+    if (!coachConfig) { setFeedback(`${immediate}\n\n想获得针对本步的五段式 AI 深入讲解，请先在顶部“AI 设置”中填写自己的 API。`); return; }
+    const requestId = ++feedbackRequest.current;
+    setAiBusy(true);
+    setFeedback(`${immediate}\n\nAI 老师正在核对局面并补充本步讲解…`);
+    try {
+      const position = new Chess(positionFen);
+      const response = await fetch("/api/coach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "training", fen: positionFen, sideToMove: position.turn() === "w" ? "白方" : "黑方", question: `学员${correct ? "正确走出" : "尝试了"} ${actualSan}；课程预期 ${expectedSan}。${replySan ? `课程回应为 ${replySan}。` : ""}请全面解释预期着的局面作用、实际选择的取舍、双方后续计划与记忆方法。`, opening: `${variation.eco} · ${variation.name}；课程主题：${variation.focus}`, lines: [], config: coachConfig }) });
+      const result = await response.json() as { answer?: string; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "AI 服务返回错误");
+      if (requestId === feedbackRequest.current) setFeedback(result.answer ?? immediate);
+    } catch (error) {
+      if (requestId === feedbackRequest.current) setFeedback(`${immediate}\n\nAI 深入讲解暂不可用：${error instanceof Error ? error.message : "请稍后重试"}`);
+    } finally { if (requestId === feedbackRequest.current) setAiBusy(false); }
+  }
 
   function resetLesson() {
     const fresh = new Chess();
@@ -61,6 +105,8 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     setOnBook(true);
     setSelected(null);
     setBusy(false);
+    setAiBusy(false);
+    feedbackRequest.current += 1;
     setDone(false);
     setAttempts(0);
     setScore(0);
@@ -82,6 +128,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
   }
 
   function finish(nextGame: Chess, message: string) {
+    markCompleted();
     setFen(nextGame.fen());
     setDone(true);
     setBusy(false);
@@ -89,7 +136,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     setFeedback(message);
   }
 
-  function respondFromPosition(nextGame: Chess, nextBookPly: number, playedSan: string) {
+  function respondFromPosition(nextGame: Chess, nextBookPly: number, playedSan: string, expectedMove: NonNullable<typeof expected>) {
     if (nextGame.isGameOver()) {
       finish(nextGame, `训练结束。你完成了 ${attempts + 1} 次选择，其中 ${score + 1} 次命中主线。`);
       return;
@@ -100,13 +147,17 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
       const afterReply = nextBookPly + 1;
       setBookPly(afterReply);
       if (afterReply >= line.length) {
-        finish(nextGame, `主线完成！你在 ${lessonMoves} 个训练节点中命中 ${score + 1} 个。现在可以进入复盘，查看整条变化。`);
+        const message = `主线完成！你在 ${lessonMoves} 个训练节点中命中 ${score + 1} 个。现在可以进入复盘，查看整条变化。`;
+        finish(nextGame, message);
+        void requestTrainingFeedback(nextGame.fen(), playedSan, expectedMove.san, true, `${message}\n\n${fixedMoveExplanation(expectedMove, variation.focus)}`, reply.san);
         return;
       }
       setFen(nextGame.fen());
       setBusy(false);
       setFeedbackTone("correct");
-      setFeedback(`正确：${playedSan}。电脑按主线回应。${fixedMoveExplanation(reply, variation.focus)}`);
+      const message = `正确：${playedSan}。${fixedMoveExplanation(expectedMove, variation.focus)}\n\n对手回应 ${reply.san}：${fixedMoveExplanation(reply, variation.focus)}`;
+      setFeedback(message);
+      void requestTrainingFeedback(nextGame.fen(), playedSan, expectedMove.san, true, message, reply.san);
       return;
     }
     if (nextBookPly >= line.length) {
@@ -126,7 +177,9 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
       setSelected(null);
       if (!attempt.accepted) {
         setFeedbackTone("error");
-        setFeedback(`走错了：${attempt.actual.san} 不是本课着法。棋盘已回到当前局面，请重新尝试这一手。${mode === "learn" ? ` 本课目标是 ${expectedMove?.san ?? "正确着法"}。` : ""}`);
+        const message = `走错了：${attempt.actual.san} 不是本课要求的 ${expectedMove?.san ?? "主线着法"}，棋盘已回到当前局面，请重新尝试。\n\n课程思路：${expectedMove ? fixedMoveExplanation(expectedMove, variation.focus) : variation.focus}`;
+        setFeedback(message);
+        if (expectedMove) void requestTrainingFeedback(fen, attempt.actual.san, expectedMove.san, false, message);
         return;
       }
       const nextGame = new Chess(attempt.fen);
@@ -136,7 +189,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
       setFen(attempt.fen);
       setFeedbackTone("correct");
       setFeedback(`正确：${attempt.actual.san}。电脑正在按课程回应…`);
-      respondFromPosition(nextGame, nextBookPly, attempt.actual.san);
+      respondFromPosition(nextGame, nextBookPly, attempt.actual.san, expectedMove!);
       return;
     }
     if (piece?.color === studentColor) setSelected(square);
@@ -147,7 +200,7 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
     <section className="trainer-stage">
       <div className="trainer-heading">
         <div><p>开局训练 · {variation.eco}</p><h1>{variation.name}</h1><span>{sample.name} · {Math.ceil(line.length / 2)} 回合固定课程</span></div>
-        <div className="trainer-progress"><span>训练进度</span><strong>{progress}%</strong><div><i style={{ width: `${progress}%` }} /></div></div>
+        <div className="trainer-progress"><span>当前变例</span><strong>{progress}%</strong><div><i style={{ width: `${progress}%` }} /></div><small>总完成 {completedGoals}/{totalGoals} · 本课程 {courseCompleted}/{theory.variations.length * 2}</small></div>
       </div>
       <div className="board-shell"><div className="chessboard" aria-label={`${variation.name}训练棋盘`}>{squares.map((square, index) => {
         const piece = game.get(square);
@@ -171,9 +224,9 @@ export function OpeningTrainer({ onReviewLine }: { onReviewLine: (pgn: string) =
         <button className="hint-button" disabled={!expected || expected.color !== studentColor || done} onClick={() => expected && setFeedback(`固定课程提示：${fixedMoveExplanation(expected, variation.focus)}`)}><Lightbulb size={15} />查看本步意图</button>
         <div className="theory-sources"><span>资料来源</span>{theory.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.label}<ExternalLink size={12} /></a>)}</div>
       </section>
-      <section className={`panel trainer-feedback ${feedbackTone}`}><div className="panel-title"><Bot size={17} /><span>陪练反馈</span></div><p aria-live="assertive">{feedback}</p>{done && <div className="trainer-result"><Trophy size={22} /><div><strong>{attempts ? Math.round(score / attempts * 100) : 0} 分</strong><span>主线命中率</span></div></div>}</section>
+      <section className={`panel trainer-feedback ${feedbackTone}`}><div className="panel-title"><Bot size={17} /><span>陪练反馈</span><span className="feedback-source">{aiBusy ? "AI 讲解中…" : coachConfig ? "固定理论 + AI" : "固定理论"}</span></div><p aria-live="assertive">{feedback}</p>{!coachConfig && <button className="hint-button" onClick={onOpenCoachSettings}><Bot size={14} />连接 AI 深入讲每一步</button>}{done && <div className="trainer-result"><Trophy size={22} /><div><strong>{attempts ? Math.round(score / attempts * 100) : 0} 分</strong><span>主线命中率 · 已计入总进度</span></div></div>}</section>
       <div className="trainer-actions"><button onClick={resetLesson}><RotateCcw size={16} />重新训练</button><button className="primary" onClick={() => onReviewLine(variation.pgn)}>进入完整复盘<ChevronRight size={16} /></button></div>
-      <p className="trainer-privacy">每条路线延伸至 12 回合：开局分支来自固定课程库，后续由 Stockfish 预先分析并固化；训练时不调用大模型。</p>
+      <p className="trainer-privacy">课程着序与基础讲解来自固定资料库；连接个人 API 后，每次选择都会额外生成并校验本步 AI 讲解。进度与配置只保存在当前浏览器。</p>
     </aside>
   </div>;
 }

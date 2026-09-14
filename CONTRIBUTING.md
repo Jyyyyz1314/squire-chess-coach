@@ -1,6 +1,6 @@
 # 参与开发
 
-需要 Node.js 22.13 或更高版本。复制 `.env.example` 为 `.env.local` 后可选填 AI 老师配置；引擎与 PGN 功能无需 API 密钥。
+需要 Node.js 22.13 或更高版本。复制 `.env.example` 为 `.env.local` 后即可运行；AI 老师配置由每位用户在网页中填写，引擎与 PGN 功能无需 API 密钥。
 
 ```bash
 npm ci

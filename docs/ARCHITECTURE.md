@@ -11,7 +11,7 @@ Squire 把确定性的棋局能力和概率性的语言模型能力分开：
           ▼
 /api/coach
 ├─ Zod 输入边界
-├─ 同源校验、限流、缓存、并发请求合并
+├─ 同源校验、限流、BYOK 校验与无缓存转发
 ├─ CoachProvider 接口
 └─ OpenAI-compatible /chat/completions
 
@@ -24,7 +24,7 @@ Squire 把确定性的棋局能力和概率性的语言模型能力分开：
 ## 稳定接口
 
 - `StockfishAdapter.analyze(fen, options)`：引擎可替换边界。
-- `CoachProvider.explain(context)`：模型供应商可替换边界。
+- `CoachProvider.explain(context, config)`：模型供应商与用户凭据的可替换边界。
 - `SavedStudy` version 1：只保存 PGN、逐步笔记和保存时间，不保存模型回答。
 - `Evaluation`：明确区分兵值与将杀，避免把 `#-2` 错当成 `-2.00`。
 - `LichessGame` / `buildPlayerProfile`：隔离第三方棋局协议与可测试的画像计算。
@@ -37,7 +37,7 @@ OAuth access token 由 AES-GCM 加密后写入 HttpOnly、SameSite Cookie，前�
 
 ## 生产环境差异
 
-当前限流与回答缓存为单实例内存实现，适合原型和单机部署。多实例商业部署必须换成 Durable Object、KV/Redis 或网关级限流，并加入账户、套餐配额、成本指标和滥用处置。适配层不应让这些变化渗入棋盘组件。
+当前限流为单实例内存实现，适合原型和单机部署。模型 Key 由每位用户提供，回答不跨用户缓存。多实例商业部署必须换成 Durable Object、KV/Redis 或网关级限流，并加入账户、套餐配额、滥用处置和供应商出口白名单。适配层不应让这些变化渗入棋盘组件。
 
 ## 下一步拆分
 

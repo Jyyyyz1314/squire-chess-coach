@@ -25,6 +25,10 @@ const LICHESS_OPENINGS: TheorySource = {
   label: "Lichess 开局数据库（CC0）",
   url: "https://github.com/lichess-org/chess-openings",
 };
+const OPENING_PRINCIPLES: TheorySource = {
+  label: "Chess.com 开局原则",
+  url: "https://www.chess.com/article/view/the-principles-of-the-opening",
+};
 
 function course(
   sampleId: string,
@@ -37,7 +41,7 @@ function course(
     sampleId,
     introduction,
     plans,
-    sources: [LICHESS_OPENINGS, { label: "Wikibooks 开局理论", url: wikiUrl }],
+    sources: [LICHESS_OPENINGS, { label: "Wikibooks 开局理论", url: wikiUrl }, OPENING_PRINCIPLES],
     variations: variations.map(([id, eco, name, pgn, focus]) => ({
       id,
       eco,
