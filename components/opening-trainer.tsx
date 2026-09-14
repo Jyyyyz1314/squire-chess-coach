@@ -3,11 +3,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, Square } from "chess.js";
-import { BookOpenCheck, Bot, ChevronRight, ExternalLink, Lightbulb, ListTree, RotateCcw, Target, Trophy } from "lucide-react";
+import { BookOpenCheck, Bot, CalendarCheck, Check, ChevronRight, Clock3, ExternalLink, Flame, Lightbulb, ListTree, Medal, RotateCcw, Sparkles, Star, Target, Trophy } from "lucide-react";
 import { OPENING_SAMPLES } from "@/lib/chess/opening-samples";
 import { OPENING_THEORY_BY_SAMPLE } from "@/lib/chess/opening-variations";
 import { attemptOpeningMove, fixedMoveExplanation, openingTrainingLineFromPgn } from "@/lib/chess/opening-trainer";
 import { CoachConfig } from "@/lib/coach/config";
+import { dueReviewKeys, learningLevel, learningStreak, localDateKey, parseTrainingProgress, recordTrainingCompletion, totalXp, TrainingProgressState } from "@/lib/chess/training-progress";
 
 type StudentColor = "w" | "b";
 type TrainingMode = "learn" | "test";
@@ -23,7 +24,6 @@ function plyFromFen(position: string) {
   return (Math.max(1, Number.parseInt(fullMove, 10) || 1) - 1) * 2 + (turn === "b" ? 1 : 0);
 }
 
-type TrainingProgress = Record<string, { completedAt: string; bestAccuracy: number }>;
 const PROGRESS_KEY = "squire-opening-progress-v1";
 
 export function OpeningTrainer({ onReviewLine, coachConfig, onOpenCoachSettings }: { onReviewLine: (pgn: string) => void; coachConfig: CoachConfig | null; onOpenCoachSettings: () => void }) {
@@ -41,7 +41,8 @@ export function OpeningTrainer({ onReviewLine, coachConfig, onOpenCoachSettings 
   const [score, setScore] = useState(0);
   const [feedback, setFeedback] = useState("请选择棋子，走出你认为正确的开局着法。");
   const [feedbackTone, setFeedbackTone] = useState<"neutral" | "correct" | "error">("neutral");
-  const [savedProgress, setSavedProgress] = useState<TrainingProgress>({});
+  const [savedProgress, setSavedProgress] = useState<TrainingProgressState>(() => parseTrainingProgress(null));
+  const [lastReward, setLastReward] = useState<{ kind: "new" | "review"; xp: number } | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const feedbackRequest = useRef(0);
   const sample = OPENING_SAMPLES.find((item) => item.id === sampleId) ?? OPENING_SAMPLES[0];
@@ -56,25 +57,47 @@ export function OpeningTrainer({ onReviewLine, coachConfig, onOpenCoachSettings 
   const lessonMoves = line.filter((move) => move.color === studentColor).length;
   const progress = Math.min(100, Math.round(plyFromFen(fen) / Math.max(line.length, 1) * 100));
   const totalGoals = Object.values(OPENING_THEORY_BY_SAMPLE).reduce((total, course) => total + course.variations.length * 2, 0);
-  const completedGoals = Object.keys(savedProgress).length;
+  const completedGoals = Object.keys(savedProgress.records).length;
   const courseGoalPrefix = `${sample.id}/`;
-  const courseCompleted = Object.keys(savedProgress).filter((key) => key.startsWith(courseGoalPrefix)).length;
+  const courseCompleted = Object.keys(savedProgress.records).filter((key) => key.startsWith(courseGoalPrefix)).length;
+  const today = localDateKey();
+  const todayActivity = savedProgress.daily[today] ?? { newLessons: [], reviews: [], xp: 0 };
+  const xp = totalXp(savedProgress);
+  const level = learningLevel(xp);
+  const streak = learningStreak(savedProgress);
+  const dueReviews = dueReviewKeys(savedProgress);
+  const reviewTarget = Math.min(savedProgress.plan.reviews, todayActivity.reviews.length + dueReviews.length);
+  const currentGoalKey = `${sample.id}/${variation.id}/${studentColor}`;
+  const currentRecord = savedProgress.records[currentGoalKey];
 
   useEffect(() => {
     // Progress is browser-local and can only be restored after hydration.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    try { setSavedProgress(JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? "{}") as TrainingProgress); }
-    catch { setSavedProgress({}); }
+    setSavedProgress(parseTrainingProgress(localStorage.getItem(PROGRESS_KEY)));
   }, []);
 
   function markCompleted() {
-    const key = `${sample.id}/${variation.id}/${studentColor}`;
     const accuracy = attempts + 1 ? Math.round((score + 1) / (attempts + 1) * 100) : 100;
-    setSavedProgress((current) => {
-      const next = { ...current, [key]: { completedAt: current[key]?.completedAt ?? new Date().toISOString(), bestAccuracy: Math.max(current[key]?.bestAccuracy ?? 0, accuracy) } };
-      localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
-      return next;
-    });
+    const result = recordTrainingCompletion(savedProgress, currentGoalKey, accuracy);
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(result.state));
+    setSavedProgress(result.state);
+    setLastReward({ kind: result.kind, xp: result.xp });
+  }
+
+  function adjustPlan(field: "newLessons" | "reviews", delta: number) {
+    const maximum = field === "newLessons" ? 10 : 20;
+    const next: TrainingProgressState = { ...savedProgress, plan: { ...savedProgress.plan, [field]: Math.max(1, Math.min(maximum, savedProgress.plan[field] + delta)) } };
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(next));
+    setSavedProgress(next);
+  }
+
+  function startNextReview() {
+    const [nextSample, nextVariation, nextColor] = dueReviews[0]?.split("/") ?? [];
+    if (!nextSample || !nextVariation || (nextColor !== "w" && nextColor !== "b")) return;
+    setSampleId(nextSample);
+    setVariationId(nextVariation);
+    setStudentColor(nextColor);
+    setMode("test");
   }
 
   async function requestTrainingFeedback(positionFen: string, actualSan: string, expectedSan: string, correct: boolean, immediate: string, replySan?: string) {
@@ -108,6 +131,7 @@ export function OpeningTrainer({ onReviewLine, coachConfig, onOpenCoachSettings 
     setAiBusy(false);
     feedbackRequest.current += 1;
     setDone(false);
+    setLastReward(null);
     setAttempts(0);
     setScore(0);
     setFeedbackTone("neutral");
@@ -196,7 +220,15 @@ export function OpeningTrainer({ onReviewLine, coachConfig, onOpenCoachSettings 
     else setSelected(null);
   }
 
-  return <div className="trainer-layout mx-auto max-w-[1520px] px-4 py-6 xl:px-7">
+  return <div className="trainer-hub mx-auto max-w-[1520px] px-4 py-6 xl:px-7">
+    <section className="learning-dashboard">
+      <div className="level-card"><div className="level-emblem"><Medal size={24} /><strong>Lv.{level.level}</strong></div><div><span>开局探索者</span><div className="level-track"><i style={{ width: `${Math.round(level.current / level.required * 100)}%` }} /></div><small>{level.current}/{level.required} XP · 累计 {xp} XP</small></div></div>
+      <div className="daily-quests"><div className="quest-heading"><CalendarCheck size={18} /><div><strong>今日任务</strong><small>{todayActivity.newLessons.length >= savedProgress.plan.newLessons && todayActivity.reviews.length >= reviewTarget ? "今日目标全部完成！" : "完成新课，也别忘了巩固旧知识"}</small></div><span><Flame size={15} />连续 {streak} 天</span></div><div className="quest-row"><span>新关卡</span><div><i style={{ width: `${Math.min(100, todayActivity.newLessons.length / savedProgress.plan.newLessons * 100)}%` }} /></div><b>{todayActivity.newLessons.length}/{savedProgress.plan.newLessons}</b><button aria-label="减少每日新关卡" onClick={() => adjustPlan("newLessons", -1)}>−</button><button aria-label="增加每日新关卡" onClick={() => adjustPlan("newLessons", 1)}>＋</button></div><div className="quest-row"><span>复习</span><div><i style={{ width: `${reviewTarget ? Math.min(100, todayActivity.reviews.length / reviewTarget * 100) : 100}%` }} /></div><b>{todayActivity.reviews.length}/{reviewTarget}</b><button aria-label="减少每日复习上限" onClick={() => adjustPlan("reviews", -1)}>−</button><button aria-label="增加每日复习上限" onClick={() => adjustPlan("reviews", 1)}>＋</button></div></div>
+      <div className="review-card"><Clock3 size={20} /><div><span>复习队列</span><strong>{dueReviews.length ? `${dueReviews.length} 关今天到期` : "今天没有到期内容"}</strong><small>{currentRecord ? `本关最佳 ${currentRecord.bestAccuracy}% · ${new Date(currentRecord.nextReviewAt).toLocaleDateString("zh-CN")} 再复习` : "首次通关后自动安排 1、2、4…天复习"}</small></div>{dueReviews.length > 0 && <button onClick={startNextReview}>开始复习<ChevronRight size={14} /></button>}</div>
+    </section>
+    <section className="challenge-map"><div className="challenge-map-title"><div><Sparkles size={17} /><span>{sample.name} · 闯关地图</span></div><small>选择关卡 · 当前执{studentColor === "w" ? "白" : "黑"}</small></div><div className="challenge-path">{theory.variations.map((item, index) => { const key = `${sample.id}/${item.id}/${studentColor}`; const record = savedProgress.records[key]; const due = dueReviews.includes(key); const active = item.id === variation.id; return <button key={item.id} className={`challenge-node ${record ? "passed" : ""} ${due ? "due" : ""} ${active ? "active" : ""}`} onClick={() => setVariationId(item.id)}><span>{record ? due ? <Clock3 size={17} /> : <Check size={17} /> : <Star size={16} />}</span><b>第 {index + 1} 关</b><small>{item.name}</small>{record && <em>{due ? "待复习" : `${record.bestAccuracy}%`}</em>}</button>; })}</div></section>
+    {lastReward && done && <div className="reward-toast"><Trophy size={22} /><div><strong>{lastReward.xp ? `+${lastReward.xp} XP` : "今日已计分"}</strong><span>{lastReward.kind === "new" ? "新关卡通关！已加入复习计划" : "复习完成！记忆间隔已延长"}</span></div></div>}
+    <div className="trainer-layout">
     <section className="trainer-stage">
       <div className="trainer-heading">
         <div><p>开局训练 · {variation.eco}</p><h1>{variation.name}</h1><span>{sample.name} · {Math.ceil(line.length / 2)} 回合固定课程</span></div>
@@ -228,5 +260,6 @@ export function OpeningTrainer({ onReviewLine, coachConfig, onOpenCoachSettings 
       <div className="trainer-actions"><button onClick={resetLesson}><RotateCcw size={16} />重新训练</button><button className="primary" onClick={() => onReviewLine(variation.pgn)}>进入完整复盘<ChevronRight size={16} /></button></div>
       <p className="trainer-privacy">课程着序与基础讲解来自固定资料库；连接个人 API 后，每次选择都会额外生成并校验本步 AI 讲解。进度与配置只保存在当前浏览器。</p>
     </aside>
+    </div>
   </div>;
 }
